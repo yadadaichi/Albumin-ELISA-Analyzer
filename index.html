@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ELISAプレートアナライザー - 4PLカーブフィッティングによる濃度計算">
+    <title>ELISA Plate Analyzer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🧬 ELISA Plate Analyzer</h1>
+            <p class="subtitle">4-Parameter Logistic Curve Fitting</p>
+            <button id="settingsBtn" class="btn btn-secondary" style="position: absolute; right: 20px; top: 20px;">
+                ⚙️ Settings
+            </button>
+        </header>
+
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="modal">
+            <div class="modal-content">
+                <span id="closeSettings" class="close">&times;</span>
+                <h2>⚙️ Method Settings</h2>
+
+                <div class="setting-group">
+                    <label>Regression Model</label>
+                    <input type="text" value="4PL" disabled class="input-disabled">
+                </div>
+
+                <div class="setting-group">
+                    <label>Other Settings</label>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="settingBlankAsStandard" checked>
+                            Set Blank as standard data (conc = 0)
+                        </label>
+                        <label>
+                            <input type="checkbox" id="settingSubtractMin">
+                            Subtract minimum OD value (of blank and standards)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button id="applySettingsBtn" class="btn btn-primary">Apply & Re-calculate</button>
+                </div>
+            </div>
+        </div>
+
+        <main class="main-content">
+            <!-- Left Panel: Plate Map -->
+            <section class="panel plate-panel">
+                <div class="panel-header">
+                    <h2>📋 Plate Map</h2>
+                    <div class="panel-actions">
+                        <button id="clearAllBtn" class="btn btn-secondary">Clear All</button>
+                    </div>
+                </div>
+
+                <!-- Multi-Plate Import -->
+                <div class="multi-plate-manager">
+                    <h3>📂 Plate Data Import</h3>
+                    <div class="import-instructions">
+                        <p>CSV format: Each plate is 8 rows × 24 columns</p>
+                        <ul>
+                            <li>Columns 1-12: Well Names (duplicates can be empty)</li>
+                            <li>Columns 13-24: Absorbance Values</li>
+                            <li>Multiple plates: Stack vertically (8 rows per plate)</li>
+                        </ul>
+                    </div>
+                    <div class="master-drop-zone" id="masterDropZone">
+                        <button class="clear-zone-btn" id="clearAllDataBtn" title="Clear All">&times;</button>
+                        <span class="drop-icon">📋</span>
+                        <span class="drop-label">Drop Multi-Plate CSV Here</span>
+                        <span class="drop-sublabel">or click to select file</span>
+                        <span class="drop-status" id="masterDropStatus">Ready to import</span>
+                    </div>
+                    <div class="plate-status-grid" id="plateStatusGrid">
+                        <div class="plate-status-item" data-plate="1"><span class="status-dot"></span>Plate 1</div>
+                        <div class="plate-status-item" data-plate="2"><span class="status-dot"></span>Plate 2</div>
+                        <div class="plate-status-item" data-plate="3"><span class="status-dot"></span>Plate 3</div>
+                        <div class="plate-status-item" data-plate="4"><span class="status-dot"></span>Plate 4</div>
+                        <div class="plate-status-item" data-plate="5"><span class="status-dot"></span>Plate 5</div>
+                        <div class="plate-status-item" data-plate="6"><span class="status-dot"></span>Plate 6</div>
+                    </div>
+                </div>
+
+                <!-- Plate Preview Tabs -->
+                <div class="plate-tabs">
+                    <button class="plate-tab active" data-plate="1">Plate 1</button>
+                    <button class="plate-tab" data-plate="2">Plate 2</button>
+                    <button class="plate-tab" data-plate="3">Plate 3</button>
+                    <button class="plate-tab" data-plate="4">Plate 4</button>
+                    <button class="plate-tab" data-plate="5">Plate 5</button>
+                    <button class="plate-tab" data-plate="6">Plate 6</button>
+                </div>
+
+                <!-- Plate Size Controls -->
+                <div class="plate-size-controls">
+                    <label for="plateSizeSlider">Preview Size:</label>
+                    <input type="range" id="plateSizeSlider" min="500" max="1200" value="700" step="50">
+                    <span id="plateSizeVal">100%</span>
+                </div>
+
+                <!-- 96-Well Plate Grid -->
+                <div class="plate-container" id="plateContainer">
+                    <div class="plate-header">
+                        <div class="corner-cell"></div>
+                        <div class="col-labels" id="colLabels"></div>
+                    </div>
+                    <div class="plate-body">
+                        <div class="row-labels" id="rowLabels"></div>
+                        <div class="plate-grid" id="plateGrid"></div>
+                    </div>
+                </div>
+
+                <!-- Well Type Legend -->
+                <div class="legend">
+                    <div class="legend-item">
+                        <span class="legend-color standard"></span>
+                        <span>Standard</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color sample"></span>
+                        <span>Sample</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color blank"></span>
+                        <span>Blank</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color empty"></span>
+                        <span>Empty</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Results -->
+            <section class="panel editor-panel">
+
+
+                <!-- Standard Curve Setup -->
+                <div class="editor-section">
+                    <h2>📊 Standard Curve</h2>
+                    <div class="standards-table-container">
+                        <table class="standards-table" id="standardsTable">
+                            <thead>
+                                <tr>
+                                    <th>Well</th>
+                                    <th>Concentration</th>
+                                    <th>Absorbance</th>
+                                    <th>Mean Abs.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="standardsTableBody">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <button id="fitCurveBtn" class="btn btn-primary">Fit 4PL Curve</button>
+                </div>
+
+                <!-- 4PL Parameters -->
+                <div class="editor-section parameters-section" id="parametersSection">
+                    <h2>🔬 4PL Parameters</h2>
+
+                    <div class="equation-container">
+                        <div class="equation-label">Model Equation:</div>
+                        <div class="equation-formula">
+                            y = d + <span class="fraction"><span class="numerator">a - d</span><span
+                                    class="denominator">1 + (x/c)<sup>b</sup></span></span>
+                        </div>
+                        <div class="equation-label">Fitted Equation:</div>
+                        <div class="equation-formula equation-fitted" id="fittedEquation">
+                            <span class="placeholder-text">Fit the curve to see the equation</span>
+                        </div>
+                    </div>
+
+                    <div class="parameters-grid">
+                        <div class="param-item">
+                            <span class="param-label">A (Min)</span>
+                            <span class="param-value" id="paramA">-</span>
+                        </div>
+                        <div class="param-item">
+                            <span class="param-label">B (Slope)</span>
+                            <span class="param-value" id="paramB">-</span>
+                        </div>
+                        <div class="param-item">
+                            <span class="param-label">C (EC50)</span>
+                            <span class="param-value" id="paramC">-</span>
+                        </div>
+                        <div class="param-item">
+                            <span class="param-label">D (Max)</span>
+                            <span class="param-value" id="paramD">-</span>
+                        </div>
+                        <div class="param-item full-width">
+                            <span class="param-label">R²</span>
+                            <span class="param-value" id="paramR2">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart -->
+                <div class="editor-section chart-section">
+                    <h2>📈 Standard Curve Plot</h2>
+                    <div class="chart-container">
+                        <canvas id="standardCurveChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Results Section -->
+        <section class="results-section" id="resultsSection">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>📋 Calculated Concentrations</h2>
+                    <button id="exportResultsBtn" class="btn btn-secondary">Export CSV</button>
+                </div>
+                <div class="results-table-container">
+                    <table class="results-table" id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th>Well</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Absorbance</th>
+                                <th>Dilution</th>
+                                <th>Calculated Conc.<br><small>(ng/mL)</small></th>
+                                <th>Final Conc.<br><small>(µg / 1M cells)</small></th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsTableBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sample Charts Section -->
+        <section class="sample-charts-section" id="sampleChartsSection">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>📊 Sample Concentration by Day</h2>
+                    <div class="panel-actions">
+                        <button id="generateChartsBtn" class="btn btn-primary">Generate Charts</button>
+                        <div class="export-dropdown">
+                            <button id="exportChartsBtn" class="btn btn-secondary">📥 Export All</button>
+                            <div class="export-dropdown-content" id="exportDropdown">
+                                <button id="exportPngBtn">Download as PNG</button>
+                                <button id="exportSvgBtn">Download as SVG</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="sample-charts-container" id="sampleChartsContainer">
+                    <!-- Charts will be generated dynamically -->
+                    <p class="no-charts-message">Click "Generate Charts" after fitting the curve to display sample
+                        graphs.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="curve-fitting.js"></script>
+    <script src="chart-config.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
