@@ -9,13 +9,13 @@ class ELISAPlateAnalyzer {
         this.rows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
         this.cols = Array.from({ length: 12 }, (_, i) => i + 1);
 
-        // Multi-plate data storage (6 plates)
+        // Multi-plate data storage (10 plates)
         this.plates = [];
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 10; i++) {
             this.plates.push(this.createEmptyPlate());
         }
 
-        // Current plate for display (index 0-5)
+        // Current plate for display (index 0-9)
         this.currentPlateIndex = 0;
 
         // Legacy single plate data for UI display
@@ -261,7 +261,7 @@ class ELISAPlateAnalyzer {
      * Switch to a different plate for preview
      */
     switchPlate(plateIndex) {
-        if (plateIndex < 0 || plateIndex >= 6) return;
+        if (plateIndex < 0 || plateIndex >= 10) return;
 
         this.currentPlateIndex = plateIndex;
         this.plateData = this.plates[plateIndex];
@@ -751,7 +751,7 @@ class ELISAPlateAnalyzer {
         if (!confirm('Are you sure you want to clear all data from all plates?')) return;
 
         // Reset all plates
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 10; i++) {
             this.plates[i] = this.createEmptyPlate();
         }
         this.plateData = this.plates[0];
@@ -802,8 +802,8 @@ class ELISAPlateAnalyzer {
      * Fit 4PL curve for EACH plate individually
      */
     fitCurve() {
-        this.plateParams = new Array(6).fill(null);
-        this.plateMinODs = new Array(6).fill(0);
+        this.plateParams = new Array(10).fill(null);
+        this.plateMinODs = new Array(10).fill(0);
         let anySuccess = false;
 
         // Get analysis settings
@@ -814,7 +814,7 @@ class ELISAPlateAnalyzer {
         const blankAsStandard = blankAsStdEl ? blankAsStdEl.checked : true;
 
         // Fit for each plate
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 10; i++) {
             const plate = this.plates[i];
 
             // Calculate Min OD if subtractMin is enabled
@@ -1267,11 +1267,17 @@ class ELISAPlateAnalyzer {
 
             container.appendChild(chartItem);
 
-            // Sort by day
-            const sortedDays = Object.keys(dayData).map(d => parseInt(d)).sort((a, b) => a - b);
+            // Sort by day - only include days with actual data
+            const sortedDays = Object.keys(dayData)
+                .map(d => parseInt(d))
+                .filter(d => dayData[d] && dayData[d].values && dayData[d].values.length > 0)
+                .sort((a, b) => a - b);
             const labels = sortedDays.map(d => `Day ${d}`);
             const values = sortedDays.map(d => dayData[d].mean);
             const errors = sortedDays.map(d => dayData[d].sd);
+
+            // Calculate N (number of samples per day - use first day as representative)
+            const nPerDay = sortedDays.length > 0 ? dayData[sortedDays[0]].values.length : 0;
 
             // Collect individual data points for scatter overlay
             const scatterData = [];
@@ -1286,7 +1292,6 @@ class ELISAPlateAnalyzer {
                     });
                 }
             });
-
 
             // Calculate dynamic max Y to fit error bars and individual points
             let maxY = 0;
@@ -1306,7 +1311,7 @@ class ELISAPlateAnalyzer {
                     labels: labels,
                     datasets: [
                         {
-                            label: 'Albumin (µg / 1M cells)',
+                            label: `Mean ± SD (N=${nPerDay})`,
                             data: values,
                             backgroundColor: 'rgba(102, 102, 102, 0.5)',
                             borderColor: '#333333',
@@ -1334,7 +1339,17 @@ class ELISAPlateAnalyzer {
                     maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            display: false
+                            display: true,
+                            position: 'top',
+                            align: 'end',
+                            labels: {
+                                color: '#000000',
+                                font: {
+                                    size: 11
+                                },
+                                usePointStyle: true,
+                                pointStyle: 'rect'
+                            }
                         },
                         tooltip: {
                             callbacks: {
@@ -1359,7 +1374,10 @@ class ELISAPlateAnalyzer {
 
                         x: {
                             grid: {
-                                display: false
+                                display: false,
+                                drawTicks: true,
+                                tickLength: 6,
+                                tickColor: '#000000'
                             },
                             border: {
                                 color: '#000000',
@@ -1368,26 +1386,25 @@ class ELISAPlateAnalyzer {
                             ticks: {
                                 color: '#000000',
                                 font: {
-                                    size: 12,
-                                    weight: 'bold'
-                                }
-                            },
-                            title: {
-                                display: true,
-                                text: 'Day',
-                                color: '#000000',
-                                font: {
+                                    family: 'Arial, Helvetica, sans-serif',
                                     size: 14,
                                     weight: 'bold'
-                                }
+                                },
+                                maxRotation: 45,
+                                minRotation: 45
+                            },
+                            title: {
+                                display: false
                             }
                         },
                         y: {
                             beginAtZero: true,
                             suggestedMax: yAxisMax,
                             grid: {
-                                color: '#e0e0e0',
-                                lineWidth: 1
+                                display: false,
+                                drawTicks: true,
+                                tickLength: 6,
+                                tickColor: '#000000'
                             },
                             border: {
                                 color: '#000000',
@@ -1396,17 +1413,22 @@ class ELISAPlateAnalyzer {
                             ticks: {
                                 color: '#000000',
                                 font: {
-                                    size: 11
-                                }
+                                    family: 'Arial, Helvetica, sans-serif',
+                                    size: 12,
+                                    weight: 'bold'
+                                },
+                                padding: 8
                             },
                             title: {
                                 display: true,
-                                text: 'Albumin (µg / 1M cells)',
+                                text: 'Albumin [µg / 1M cells]',
                                 color: '#000000',
                                 font: {
+                                    family: 'Arial, Helvetica, sans-serif',
                                     size: 14,
                                     weight: 'bold'
-                                }
+                                },
+                                padding: { bottom: 10 }
                             }
                         }
                     }
@@ -1483,12 +1505,9 @@ class ELISAPlateAnalyzer {
         // Create container for combined chart
         const combinedChartItem = document.createElement('div');
         combinedChartItem.className = 'sample-chart-item combined-chart-item';
-        // Calculate dynamic width based on number of conditions and days
-        const numBars = sortedConditions.length * Object.keys(Object.values(groupedData)[0] || {}).length || 1;
-        const minWidthPerBar = 40; // Minimum pixels per bar
-        const calculatedWidth = Math.max(1200, numBars * minWidthPerBar);
-        combinedChartItem.style.width = `${calculatedWidth}px`;
-        combinedChartItem.style.minWidth = '100%';
+        // Use 100% width to fit the page
+        combinedChartItem.style.width = '100%';
+        combinedChartItem.style.maxWidth = '100%';
         combinedChartItem.style.margin = '0 auto';
         combinedChartItem.style.padding = '0 20px';
 
@@ -1543,21 +1562,22 @@ class ELISAPlateAnalyzer {
 
         sortedConditions.forEach((condition, condIdx) => {
             const conditionData = groupedData[condition];
+            // Get only days that have actual data for this condition
+            const conditionDays = Object.keys(conditionData)
+                .map(d => parseInt(d))
+                .filter(d => conditionData[d] && conditionData[d].values && conditionData[d].values.length > 0)
+                .sort((a, b) => a - b);
+
             conditionGroupInfo.push({
                 condition: condition,
                 startIndex: flatLabels.length,
-                endIndex: flatLabels.length + sortedDays.length - 1
+                endIndex: flatLabels.length + conditionDays.length - 1
             });
 
-            sortedDays.forEach(day => {
+            conditionDays.forEach(day => {
                 flatLabels.push(day.toString()); // Just the day number as label
-                if (conditionData && conditionData[day]) {
-                    flatValues.push(conditionData[day].mean);
-                    flatErrors.push(conditionData[day].sd);
-                } else {
-                    flatValues.push(null);
-                    flatErrors.push(0);
-                }
+                flatValues.push(conditionData[day].mean);
+                flatErrors.push(conditionData[day].sd);
             });
         });
 
@@ -1592,8 +1612,8 @@ class ELISAPlateAnalyzer {
                     backgroundColor: barColors,
                     borderColor: '#333333',
                     borderWidth: 1,
-                    barPercentage: 0.9,
-                    categoryPercentage: 0.85
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.7
                 }]
             },
             options: {
@@ -1626,7 +1646,10 @@ class ELISAPlateAnalyzer {
                 scales: {
                     x: {
                         grid: {
-                            display: false
+                            display: false,
+                            drawTicks: true,
+                            tickLength: 6,
+                            tickColor: '#000000'
                         },
                         border: {
                             color: '#000000',
@@ -1635,28 +1658,25 @@ class ELISAPlateAnalyzer {
                         ticks: {
                             color: '#000000',
                             font: {
-                                size: 11,
+                                family: 'Arial, Helvetica, sans-serif',
+                                size: 14,
                                 weight: 'bold'
                             },
                             maxRotation: 45,
                             minRotation: 45
                         },
                         title: {
-                            display: true,
-                            text: 'Day',
-                            color: '#000000',
-                            font: {
-                                size: 14,
-                                weight: 'bold'
-                            }
+                            display: false
                         }
                     },
                     y: {
                         beginAtZero: true,
                         suggestedMax: yAxisMax,
                         grid: {
-                            color: '#e0e0e0',
-                            lineWidth: 1
+                            display: false,
+                            drawTicks: true,
+                            tickLength: 6,
+                            tickColor: '#000000'
                         },
                         border: {
                             color: '#000000',
@@ -1665,17 +1685,22 @@ class ELISAPlateAnalyzer {
                         ticks: {
                             color: '#000000',
                             font: {
-                                size: 11
-                            }
+                                family: 'Arial, Helvetica, sans-serif',
+                                size: 12,
+                                weight: 'bold'
+                            },
+                            padding: 8
                         },
                         title: {
                             display: true,
-                            text: 'Albumin secretion (µg/1 M Cells/Day)',
+                            text: 'Albumin [µg / 1M cells]',
                             color: '#000000',
                             font: {
+                                family: 'Arial, Helvetica, sans-serif',
                                 size: 14,
                                 weight: 'bold'
-                            }
+                            },
+                            padding: { bottom: 10 }
                         }
                     }
                 }
@@ -1958,12 +1983,12 @@ class ELISAPlateAnalyzer {
 
                 // Each plate is 8 rows
                 const rowsPerPlate = 8;
-                const numPlates = Math.min(6, Math.ceil(allRows.length / rowsPerPlate));
+                const numPlates = Math.min(10, Math.ceil(allRows.length / rowsPerPlate));
 
                 console.log(`Importing ${numPlates} plates from CSV (${allRows.length} rows total)`);
 
                 // Clear existing data
-                for (let i = 0; i < 6; i++) {
+                for (let i = 0; i < 10; i++) {
                     this.plates[i] = this.createEmptyPlate();
                 }
 
@@ -2140,7 +2165,7 @@ class ELISAPlateAnalyzer {
      * Update plate status indicators in the UI
      */
     updatePlateStatusIndicators() {
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 10; i++) {
             const plate = this.plates[i];
             const hasData = Object.values(plate).some(well => well.type !== 'empty');
             const statusItem = document.querySelector(`.plate-status-item[data-plate="${i + 1}"]`);
@@ -2155,7 +2180,7 @@ class ELISAPlateAnalyzer {
      */
     clearAllPlateData() {
         // Reset all plates
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 10; i++) {
             this.plates[i] = this.createEmptyPlate();
         }
         this.plateData = this.plates[0];
