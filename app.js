@@ -1814,13 +1814,14 @@ class ELISAPlateAnalyzer {
 
                     const day = parseInt(dayMatch[2]);  // Note: now index 2 due to capture group
 
-                    // Remove day info, dilution factor, and replicate number
+                    // Remove day info, dilution factor, replicate number, and experimenter names
                     let conditionName = name
                         .replace(/(?:Day|day|d|D)\s*\d+\s*/gi, ' ')  // Remove day info
                         .replace(/\s*\(\d+x\)\s*/gi, ' ')             // Remove (10x)
                         .replace(/\s*\d+x\s*/gi, ' ')                 // Remove 10x
                         .replace(/\s*#\d+(?![-\w])/g, ' ')            // Remove #1 but keep #0-a
                         .replace(/\s*\(\s*\)\s*/g, ' ')               // Remove ()
+                        .replace(/\b(Matsumoto|sugawa|yada)\b/gi, ' ') // Remove experimenter names
                         .replace(/\s+/g, ' ')                         // Normalize spaces
                         .trim();
 
