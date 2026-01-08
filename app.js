@@ -1217,6 +1217,9 @@ class ELISAPlateAnalyzer {
         Object.values(this.sampleCharts).forEach(chart => chart.destroy());
         this.sampleCharts = {};
 
+        // Initialize selected conditions tracking
+        this.selectedConditions = new Set();
+
         // Group samples by condition (extract day info from name)
         const groupedData = this.groupSamplesByCondition();
 
@@ -1230,6 +1233,52 @@ class ELISAPlateAnalyzer {
             return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
         });
 
+        // Store for later use
+        this.currentGroupedData = groupedData;
+        this.currentSortedConditions = sortedConditions;
+
+        // Add selection controls
+        const controlsDiv = document.createElement('div');
+        controlsDiv.className = 'chart-selection-controls';
+        controlsDiv.style.marginBottom = '20px';
+        controlsDiv.style.padding = '15px';
+        controlsDiv.style.backgroundColor = '#f5f5f5';
+        controlsDiv.style.borderRadius = '8px';
+        controlsDiv.style.display = 'flex';
+        controlsDiv.style.alignItems = 'center';
+        controlsDiv.style.gap = '15px';
+        controlsDiv.style.flexWrap = 'wrap';
+
+        const selectAllBtn = document.createElement('button');
+        selectAllBtn.className = 'btn btn-secondary';
+        selectAllBtn.textContent = '全て選択';
+        selectAllBtn.style.fontSize = '12px';
+        selectAllBtn.addEventListener('click', () => this.selectAllConditions(sortedConditions));
+        controlsDiv.appendChild(selectAllBtn);
+
+        const deselectAllBtn = document.createElement('button');
+        deselectAllBtn.className = 'btn btn-secondary';
+        deselectAllBtn.textContent = '選択解除';
+        deselectAllBtn.style.fontSize = '12px';
+        deselectAllBtn.addEventListener('click', () => this.deselectAllConditions());
+        controlsDiv.appendChild(deselectAllBtn);
+
+        const generateBtn = document.createElement('button');
+        generateBtn.className = 'btn btn-primary';
+        generateBtn.textContent = '選択した条件を統合グラフに表示';
+        generateBtn.style.fontSize = '12px';
+        generateBtn.addEventListener('click', () => this.generateSelectedConditionsChart());
+        controlsDiv.appendChild(generateBtn);
+
+        const selectionInfo = document.createElement('span');
+        selectionInfo.id = 'conditionSelectionInfo';
+        selectionInfo.style.marginLeft = 'auto';
+        selectionInfo.style.color = '#666';
+        selectionInfo.textContent = '0 条件を選択中';
+        controlsDiv.appendChild(selectionInfo);
+
+        container.appendChild(controlsDiv);
+
         // Create a chart for each condition
         sortedConditions.forEach(conditionName => {
             const dayData = groupedData[conditionName];
@@ -1237,7 +1286,7 @@ class ELISAPlateAnalyzer {
             const chartItem = document.createElement('div');
             chartItem.className = 'sample-chart-item';
 
-            // Header with title and export button
+            // Header with checkbox, title and export button
             const chartHeader = document.createElement('div');
             chartHeader.className = 'chart-item-header';
             chartHeader.style.display = 'flex';
@@ -1245,11 +1294,31 @@ class ELISAPlateAnalyzer {
             chartHeader.style.alignItems = 'center';
             chartHeader.style.marginBottom = '10px';
 
-            const title = document.createElement('div');
+            // Left side: checkbox + title
+            const leftSide = document.createElement('div');
+            leftSide.style.display = 'flex';
+            leftSide.style.alignItems = 'center';
+            leftSide.style.gap = '10px';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `select-${conditionName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+            checkbox.dataset.condition = conditionName;
+            checkbox.style.width = '18px';
+            checkbox.style.height = '18px';
+            checkbox.style.cursor = 'pointer';
+            checkbox.addEventListener('change', (e) => this.toggleConditionSelection(conditionName, e.target.checked));
+            leftSide.appendChild(checkbox);
+
+            const title = document.createElement('label');
+            title.htmlFor = checkbox.id;
             title.className = 'sample-chart-title';
             title.style.marginBottom = '0';
+            title.style.cursor = 'pointer';
             title.textContent = conditionName;
-            chartHeader.appendChild(title);
+            leftSide.appendChild(title);
+
+            chartHeader.appendChild(leftSide);
 
             // Export dropdown for this chart
             const canvasId = `chart-${conditionName.replace(/[^a-zA-Z0-9]/g, '-')}`;
@@ -1374,7 +1443,11 @@ class ELISAPlateAnalyzer {
 
                         x: {
                             grid: {
-                                display: false
+                                display: true,
+                                drawOnChartArea: false,
+                                drawTicks: true,
+                                tickLength: 6,
+                                tickColor: '#000000'
                             },
                             border: {
                                 color: '#000000',
@@ -1387,19 +1460,29 @@ class ELISAPlateAnalyzer {
                                     size: 14,
                                     weight: 'bold'
                                 },
-                                maxRotation: 45,
-                                minRotation: 45
+                                maxRotation: 0,
+                                minRotation: 0
                             },
                             title: {
-                                display: false
+                                display: true,
+                                text: 'Day',
+                                color: '#000000',
+                                font: {
+                                    family: 'Arial, Helvetica, sans-serif',
+                                    size: 14,
+                                    weight: 'bold'
+                                }
                             }
                         },
                         y: {
                             beginAtZero: true,
                             suggestedMax: yAxisMax,
                             grid: {
-                                color: '#cccccc',
-                                lineWidth: 1
+                                display: true,
+                                drawOnChartArea: false,
+                                drawTicks: true,
+                                tickLength: 6,
+                                tickColor: '#000000'
                             },
                             border: {
                                 color: '#000000',
@@ -1641,7 +1724,11 @@ class ELISAPlateAnalyzer {
                 scales: {
                     x: {
                         grid: {
-                            display: false
+                            display: true,
+                            drawOnChartArea: false,
+                            drawTicks: true,
+                            tickLength: 6,
+                            tickColor: '#000000'
                         },
                         border: {
                             color: '#000000',
@@ -1654,19 +1741,29 @@ class ELISAPlateAnalyzer {
                                 size: 14,
                                 weight: 'bold'
                             },
-                            maxRotation: 45,
-                            minRotation: 45
+                            maxRotation: 0,
+                            minRotation: 0
                         },
                         title: {
-                            display: false
+                            display: true,
+                            text: 'Day',
+                            color: '#000000',
+                            font: {
+                                family: 'Arial, Helvetica, sans-serif',
+                                size: 14,
+                                weight: 'bold'
+                            }
                         }
                     },
                     y: {
                         beginAtZero: true,
                         suggestedMax: yAxisMax,
                         grid: {
-                            color: '#cccccc',
-                            lineWidth: 1
+                            display: true,
+                            drawOnChartArea: false,
+                            drawTicks: true,
+                            tickLength: 6,
+                            tickColor: '#000000'
                         },
                         border: {
                             color: '#000000',
@@ -1739,33 +1836,32 @@ class ELISAPlateAnalyzer {
                 id: 'conditionLabels',
                 afterDraw: (chart) => {
                     const { ctx, chartArea, scales: { x } } = chart;
-                    const numDays = sortedDays.length;
 
                     ctx.save();
-                    ctx.font = 'bold 11px Inter, sans-serif';
+                    ctx.font = 'bold 11px Arial, Helvetica, sans-serif';
                     ctx.fillStyle = '#000000';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'top';
 
-                    sortedConditions.forEach((condition, condIdx) => {
-                        // Calculate center position for this condition group
-                        const startBarIdx = condIdx * numDays;
-                        const endBarIdx = startBarIdx + numDays - 1;
-
+                    // Use conditionGroupInfo for accurate positioning
+                    conditionGroupInfo.forEach((group, condIdx) => {
                         const meta = chart.getDatasetMeta(0);
                         if (meta.data.length === 0) return;
 
-                        const startX = meta.data[startBarIdx]?.x || 0;
-                        const endX = meta.data[endBarIdx]?.x || 0;
+                        // Get actual bar positions for this condition
+                        const startX = meta.data[group.startIndex]?.x || 0;
+                        const endX = meta.data[group.endIndex]?.x || 0;
                         const centerX = (startX + endX) / 2;
 
                         // Draw condition name below the chart
                         const yPos = chartArea.bottom + 55; // Below the day labels
-                        ctx.fillText(condition, centerX, yPos);
+                        ctx.fillText(group.condition, centerX, yPos);
 
                         // Draw separator line between condition groups (except after last)
-                        if (condIdx < sortedConditions.length - 1) {
-                            const separatorX = endX + (meta.data[endBarIdx + 1]?.x - endX) / 2;
+                        if (condIdx < conditionGroupInfo.length - 1) {
+                            const nextGroup = conditionGroupInfo[condIdx + 1];
+                            const nextStartX = meta.data[nextGroup.startIndex]?.x || 0;
+                            const separatorX = endX + (nextStartX - endX) / 2;
                             ctx.beginPath();
                             ctx.strokeStyle = '#cccccc';
                             ctx.lineWidth = 1;
@@ -1788,6 +1884,302 @@ class ELISAPlateAnalyzer {
         this.sampleCharts[canvasId].conditionLabels = sortedConditions;
         this.sampleCharts[canvasId].isCombinedChart = true;
         this.sampleCharts[canvasId].numDaysPerCondition = sortedDays.length;
+    }
+
+    /**
+     * Toggle condition selection
+     */
+    toggleConditionSelection(conditionName, isSelected) {
+        if (isSelected) {
+            this.selectedConditions.add(conditionName);
+        } else {
+            this.selectedConditions.delete(conditionName);
+        }
+        this.updateConditionSelectionInfo();
+    }
+
+    /**
+     * Select all conditions
+     */
+    selectAllConditions(conditions) {
+        conditions.forEach(cond => {
+            this.selectedConditions.add(cond);
+            const checkbox = document.querySelector(`input[data-condition="${cond}"]`);
+            if (checkbox) checkbox.checked = true;
+        });
+        this.updateConditionSelectionInfo();
+    }
+
+    /**
+     * Deselect all conditions
+     */
+    deselectAllConditions() {
+        this.selectedConditions.clear();
+        document.querySelectorAll('input[data-condition]').forEach(cb => cb.checked = false);
+        this.updateConditionSelectionInfo();
+    }
+
+    /**
+     * Update selection info display
+     */
+    updateConditionSelectionInfo() {
+        const infoEl = document.getElementById('conditionSelectionInfo');
+        if (infoEl) {
+            infoEl.textContent = `${this.selectedConditions.size} 条件を選択中`;
+        }
+    }
+
+    /**
+     * Generate a combined chart with only selected conditions
+     */
+    generateSelectedConditionsChart() {
+        if (this.selectedConditions.size === 0) {
+            alert('条件を1つ以上選択してください。');
+            return;
+        }
+
+        const container = document.getElementById('sampleChartsContainer');
+
+        // Remove any existing selected conditions chart
+        const existingSelected = document.getElementById('selected-conditions-chart-wrapper');
+        if (existingSelected) existingSelected.remove();
+
+        // Get selected conditions in sorted order
+        const selectedConditions = this.currentSortedConditions.filter(c => this.selectedConditions.has(c));
+
+        // Generate the chart using existing logic but with selected conditions only
+        const wrapperDiv = document.createElement('div');
+        wrapperDiv.id = 'selected-conditions-chart-wrapper';
+        wrapperDiv.style.marginTop = '40px';
+        wrapperDiv.style.marginBottom = '20px';
+        wrapperDiv.style.padding = '20px';
+        wrapperDiv.style.backgroundColor = '#e8f5e9';
+        wrapperDiv.style.borderRadius = '8px';
+        wrapperDiv.style.border = '2px solid #4caf50';
+
+        const headerDiv = document.createElement('div');
+        headerDiv.style.display = 'flex';
+        headerDiv.style.justifyContent = 'space-between';
+        headerDiv.style.alignItems = 'center';
+        headerDiv.style.marginBottom = '15px';
+
+        const titleDiv = document.createElement('div');
+        titleDiv.style.fontSize = '18px';
+        titleDiv.style.fontWeight = 'bold';
+        titleDiv.style.color = '#2e7d32';
+        titleDiv.textContent = `選択条件の統合グラフ (${selectedConditions.length}条件)`;
+        headerDiv.appendChild(titleDiv);
+
+        const exportDropdown = this.createChartExportDropdown('chart-selected-conditions', 'Selected Conditions');
+        headerDiv.appendChild(exportDropdown);
+
+        wrapperDiv.appendChild(headerDiv);
+
+        const canvasContainer = document.createElement('div');
+        canvasContainer.style.height = '400px';
+        canvasContainer.style.backgroundColor = '#ffffff';
+        canvasContainer.style.borderRadius = '4px';
+        canvasContainer.style.padding = '10px';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'chart-selected-conditions';
+        canvasContainer.appendChild(canvas);
+        wrapperDiv.appendChild(canvasContainer);
+
+        // Insert after the controls div
+        const controlsDiv = container.querySelector('.chart-selection-controls');
+        if (controlsDiv) {
+            controlsDiv.insertAdjacentElement('afterend', wrapperDiv);
+        } else {
+            container.insertBefore(wrapperDiv, container.firstChild);
+        }
+
+        // Build chart data
+        const flatLabels = [];
+        const flatValues = [];
+        const flatErrors = [];
+        const conditionGroupInfo = [];
+
+        selectedConditions.forEach((condition) => {
+            const conditionData = this.currentGroupedData[condition];
+            const conditionDays = Object.keys(conditionData)
+                .map(d => parseInt(d))
+                .filter(d => conditionData[d] && conditionData[d].values && conditionData[d].values.length > 0)
+                .sort((a, b) => a - b);
+
+            conditionGroupInfo.push({
+                condition: condition,
+                startIndex: flatLabels.length,
+                endIndex: flatLabels.length + conditionDays.length - 1
+            });
+
+            conditionDays.forEach(day => {
+                flatLabels.push(day.toString());
+                flatValues.push(conditionData[day].mean);
+                flatErrors.push(conditionData[day].sd);
+            });
+        });
+
+        // Calculate max Y
+        let maxY = 0;
+        flatValues.forEach((v, i) => {
+            if (v !== null) {
+                const err = flatErrors[i] || 0;
+                if ((v + err) > maxY) maxY = v + err;
+            }
+        });
+        const yAxisMax = maxY > 0 ? maxY * 1.25 : 1;
+
+        // Generate colors
+        const barColors = flatLabels.map((_, idx) => {
+            let condIdx = 0;
+            for (let i = 0; i < conditionGroupInfo.length; i++) {
+                if (idx >= conditionGroupInfo[i].startIndex && idx <= conditionGroupInfo[i].endIndex) {
+                    condIdx = i;
+                    break;
+                }
+            }
+            const grayValue = 70 + (condIdx % 3) * 30;
+            return `rgba(${grayValue}, ${grayValue}, ${grayValue}, 0.7)`;
+        });
+
+        // Destroy existing chart if any
+        if (this.sampleCharts['chart-selected-conditions']) {
+            this.sampleCharts['chart-selected-conditions'].destroy();
+        }
+
+        // Create chart
+        this.sampleCharts['chart-selected-conditions'] = new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: flatLabels,
+                datasets: [{
+                    label: 'Albumin secretion',
+                    data: flatValues,
+                    backgroundColor: barColors,
+                    borderColor: '#333333',
+                    borderWidth: 1,
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.7
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { bottom: 35 } },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (context) => {
+                                const idx = context[0].dataIndex;
+                                let condName = '';
+                                conditionGroupInfo.forEach(g => {
+                                    if (idx >= g.startIndex && idx <= g.endIndex) condName = g.condition;
+                                });
+                                return condName;
+                            },
+                            label: (context) => {
+                                const value = context.parsed.y;
+                                return `Day ${context.label}: ${value !== null ? value.toFixed(3) : 'N/A'} µg/1M cells`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: true, drawOnChartArea: false, drawTicks: true, tickLength: 6, tickColor: '#000000' },
+                        border: { color: '#000000', width: 2 },
+                        ticks: { color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 14, weight: 'bold' }, maxRotation: 0, minRotation: 0 },
+                        title: { display: true, text: 'Day', color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 14, weight: 'bold' } }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        suggestedMax: yAxisMax,
+                        grid: { display: true, drawOnChartArea: false, drawTicks: true, tickLength: 6, tickColor: '#000000' },
+                        border: { color: '#000000', width: 2 },
+                        ticks: { color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 12, weight: 'bold' }, padding: 8 },
+                        title: { display: true, text: 'Albumin [µg / 1M cells]', color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 14, weight: 'bold' }, padding: { bottom: 10 } }
+                    }
+                }
+            },
+            plugins: [{
+                id: 'selectedErrorBars',
+                afterDatasetsDraw: (chart) => {
+                    const { ctx, scales: { y } } = chart;
+                    const meta = chart.getDatasetMeta(0);
+                    if (!meta || meta.data.length === 0) return;
+
+                    meta.data.forEach((bar, index) => {
+                        const value = flatValues[index];
+                        const error = flatErrors[index];
+                        if (value === null || error === 0 || error === undefined) return;
+
+                        const barX = bar.x;
+                        const yTop = y.getPixelForValue(value + error);
+                        const yBottom = y.getPixelForValue(Math.max(0, value - error));
+
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.strokeStyle = '#000000';
+                        ctx.lineWidth = 1.5;
+                        ctx.moveTo(barX, yTop);
+                        ctx.lineTo(barX, yBottom);
+                        const capWidth = 4;
+                        ctx.moveTo(barX - capWidth, yTop);
+                        ctx.lineTo(barX + capWidth, yTop);
+                        ctx.moveTo(barX - capWidth, yBottom);
+                        ctx.lineTo(barX + capWidth, yBottom);
+                        ctx.stroke();
+                        ctx.restore();
+                    });
+                }
+            }, {
+                id: 'selectedConditionLabels',
+                afterDraw: (chart) => {
+                    const { ctx, chartArea } = chart;
+                    ctx.save();
+                    ctx.font = 'bold 11px Arial, Helvetica, sans-serif';
+                    ctx.fillStyle = '#000000';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+
+                    conditionGroupInfo.forEach((group, condIdx) => {
+                        const meta = chart.getDatasetMeta(0);
+                        if (meta.data.length === 0) return;
+
+                        const startX = meta.data[group.startIndex]?.x || 0;
+                        const endX = meta.data[group.endIndex]?.x || 0;
+                        const centerX = (startX + endX) / 2;
+                        const yPos = chartArea.bottom + 55;
+                        ctx.fillText(group.condition, centerX, yPos);
+
+                        if (condIdx < conditionGroupInfo.length - 1) {
+                            const nextGroup = conditionGroupInfo[condIdx + 1];
+                            const nextStartX = meta.data[nextGroup.startIndex]?.x || 0;
+                            const separatorX = endX + (nextStartX - endX) / 2;
+                            ctx.beginPath();
+                            ctx.strokeStyle = '#cccccc';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([3, 3]);
+                            ctx.moveTo(separatorX, chartArea.top);
+                            ctx.lineTo(separatorX, chartArea.bottom);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                        }
+                    });
+                    ctx.restore();
+                }
+            }]
+        });
+
+        // Store data for export
+        this.sampleCharts['chart-selected-conditions'].errorData = flatErrors;
+        this.sampleCharts['chart-selected-conditions'].barValues = flatValues;
+        this.sampleCharts['chart-selected-conditions'].conditionLabels = selectedConditions;
+        this.sampleCharts['chart-selected-conditions'].isCombinedChart = true;
+
+        // Scroll to the new chart
+        wrapperDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     /**
