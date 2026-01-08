@@ -1374,10 +1374,7 @@ class ELISAPlateAnalyzer {
 
                         x: {
                             grid: {
-                                display: false,
-                                drawTicks: true,
-                                tickLength: 6,
-                                tickColor: '#000000'
+                                display: false
                             },
                             border: {
                                 color: '#000000',
@@ -1401,10 +1398,8 @@ class ELISAPlateAnalyzer {
                             beginAtZero: true,
                             suggestedMax: yAxisMax,
                             grid: {
-                                display: false,
-                                drawTicks: true,
-                                tickLength: 6,
-                                tickColor: '#000000'
+                                color: '#cccccc',
+                                lineWidth: 1
                             },
                             border: {
                                 color: '#000000',
@@ -1646,10 +1641,7 @@ class ELISAPlateAnalyzer {
                 scales: {
                     x: {
                         grid: {
-                            display: false,
-                            drawTicks: true,
-                            tickLength: 6,
-                            tickColor: '#000000'
+                            display: false
                         },
                         border: {
                             color: '#000000',
@@ -1673,10 +1665,8 @@ class ELISAPlateAnalyzer {
                         beginAtZero: true,
                         suggestedMax: yAxisMax,
                         grid: {
-                            display: false,
-                            drawTicks: true,
-                            tickLength: 6,
-                            tickColor: '#000000'
+                            color: '#cccccc',
+                            lineWidth: 1
                         },
                         border: {
                             color: '#000000',
