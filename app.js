@@ -994,8 +994,10 @@ class ELISAPlateAnalyzer {
                 if (data.type === 'sample' && correctedAbs !== null) {
                     // Calculated Conc should be dilution corrected (ng/mL)
                     const dilutedConc = calcConc !== null ? calcConc * data.dilution : null;
-                    // Final Conc is 0.01 * Calculated Conc (µg / 1M cells)
-                    const finalConc = dilutedConc !== null ? dilutedConc * 0.01 : null;
+                    // Final Conc: #0-a and #0-b use 0.005, others use 0.01 (µg / 1M cells)
+                    const is0Sample = data.name && (data.name.includes('#0-a') || data.name.includes('#0-b'));
+                    const conversionFactor = is0Sample ? 0.005 : 0.01;
+                    const finalConc = dilutedConc !== null ? dilutedConc * conversionFactor : null;
 
                     // Save to data object for chart generation
                     data.finalConcentration = finalConc;
@@ -1097,7 +1099,10 @@ class ELISAPlateAnalyzer {
                 const data = plate[wellId];
                 if (data && data.type !== 'empty') {
                     const dilutedConc = data.calculatedConcentration !== null ? data.calculatedConcentration * data.dilution : null;
-                    const finalConc = dilutedConc !== null ? dilutedConc * 0.01 : null;
+                    // Final Conc: #0-a and #0-b use 0.005, others use 0.01 (µg / 1M cells)
+                    const is0Sample = data.name && (data.name.includes('#0-a') || data.name.includes('#0-b'));
+                    const conversionFactor = is0Sample ? 0.005 : 0.01;
+                    const finalConc = dilutedConc !== null ? dilutedConc * conversionFactor : null;
 
                     results.push([
                         plateIdx + 1,
@@ -1835,7 +1840,10 @@ class ELISAPlateAnalyzer {
                     // This ensures consistency with the Export Results logic
                     const dilution = data.dilution || 1;
                     const dilutedConc = data.calculatedConcentration * dilution;
-                    const finalConc = dilutedConc * 0.01; // Unit conversion: ng/mL -> µg/1M cells (assuming standard factor)
+                    // Final Conc: #0-a and #0-b use 0.005, others use 0.01 (µg / 1M cells)
+                    const is0Sample = data.name && (data.name.includes('#0-a') || data.name.includes('#0-b'));
+                    const conversionFactor = is0Sample ? 0.005 : 0.01;
+                    const finalConc = dilutedConc * conversionFactor;
 
                     // Store detailed object including source info
                     rawData[conditionName][day].push({
