@@ -61,6 +61,13 @@ class ELISAPlateAnalyzer {
     }
 
     /**
+     * Format condition name for display by removing 'A' from '#A1' -> '#1'
+     */
+    formatConditionNameForDisplay(conditionName) {
+        return conditionName.replace(/#A(\d+)/g, '#$1');
+    }
+
+    /**
      * Initialize the application
      */
     init() {
@@ -1315,7 +1322,7 @@ class ELISAPlateAnalyzer {
             title.className = 'sample-chart-title';
             title.style.marginBottom = '0';
             title.style.cursor = 'pointer';
-            title.textContent = conditionName;
+            title.textContent = this.formatConditionNameForDisplay(conditionName);
             leftSide.appendChild(title);
 
             chartHeader.appendChild(leftSide);
@@ -1347,6 +1354,23 @@ class ELISAPlateAnalyzer {
 
             // Calculate N (number of samples per day - use first day as representative)
             const nPerDay = sortedDays.length > 0 ? dayData[sortedDays[0]].values.length : 0;
+
+            // Calculate average of the last 2 days
+            const lastTwoDays = sortedDays.slice(-2);
+            const lastTwoMeans = lastTwoDays.map(d => dayData[d].mean).filter(v => v !== null && !isNaN(v));
+            const lastTwoAvg = lastTwoMeans.length > 0
+                ? lastTwoMeans.reduce((a, b) => a + b, 0) / lastTwoMeans.length
+                : null;
+
+            // Add average display to chart header
+            if (lastTwoAvg !== null && lastTwoDays.length > 0) {
+                const avgDisplay = document.createElement('div');
+                avgDisplay.className = 'last-two-avg-display';
+                avgDisplay.style.cssText = 'background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 8px 12px; border-radius: 6px; margin: 8px 0; font-size: 13px; color: #2e7d32; border: 1px solid #a5d6a7;';
+                const daysLabel = lastTwoDays.map(d => `Day ${d}`).join(', ');
+                avgDisplay.innerHTML = `<strong>後半2日平均 (${daysLabel}):</strong> <span style="font-size: 15px; font-weight: bold;">${lastTwoAvg.toFixed(3)}</span> µg/1M cells/day`;
+                chartItem.insertBefore(avgDisplay, canvasContainer);
+            }
 
             // Collect individual data points for scatter overlay
             const scatterData = [];
@@ -1499,7 +1523,7 @@ class ELISAPlateAnalyzer {
                             },
                             title: {
                                 display: true,
-                                text: 'Albumin [µg / 1M cells]',
+                                text: 'Albumin [µg/1M cells/day]',
                                 color: '#000000',
                                 font: {
                                     family: 'Arial, Helvetica, sans-serif',
@@ -1568,6 +1592,7 @@ class ELISAPlateAnalyzer {
      * X-axis shows day numbers, grouped by condition
      */
     generateCombinedComparisonChart(groupedData, sortedConditions, container) {
+        const self = this; // For use in plugins that need access to this
         // Create a full-width wrapper that spans outside the normal container
         const wideWrapper = document.createElement('div');
         wideWrapper.className = 'combined-chart-wrapper';
@@ -1712,7 +1737,7 @@ class ELISAPlateAnalyzer {
                                 const idx = context[0].dataIndex;
                                 const conditionIdx = Math.floor(idx / sortedDays.length);
                                 const condition = sortedConditions[conditionIdx];
-                                return condition;
+                                return this.formatConditionNameForDisplay(condition);
                             },
                             label: (context) => {
                                 const value = context.parsed.y;
@@ -1780,7 +1805,7 @@ class ELISAPlateAnalyzer {
                         },
                         title: {
                             display: true,
-                            text: 'Albumin [µg / 1M cells]',
+                            text: 'Albumin [µg/1M cells/day]',
                             color: '#000000',
                             font: {
                                 family: 'Arial, Helvetica, sans-serif',
@@ -1838,7 +1863,7 @@ class ELISAPlateAnalyzer {
                     const { ctx, chartArea, scales: { x } } = chart;
 
                     ctx.save();
-                    ctx.font = 'bold 11px Arial, Helvetica, sans-serif';
+                    ctx.font = 'bold 20px Arial, Helvetica, sans-serif';
                     ctx.fillStyle = '#000000';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'top';
@@ -1855,7 +1880,7 @@ class ELISAPlateAnalyzer {
 
                         // Draw condition name below the chart
                         const yPos = chartArea.bottom + 55; // Below the day labels
-                        ctx.fillText(group.condition, centerX, yPos);
+                        ctx.fillText(self.formatConditionNameForDisplay(group.condition), centerX, yPos);
 
                         // Draw separator line between condition groups (except after last)
                         if (condIdx < conditionGroupInfo.length - 1) {
@@ -1931,6 +1956,8 @@ class ELISAPlateAnalyzer {
 
     /**
      * Generate a combined chart with only selected conditions
+     * Grouped by day: conditions are displayed side by side within each day
+     * Includes ANOVA/Tukey HSD statistical tests with significance markers
      */
     generateSelectedConditionsChart() {
         if (this.selectedConditions.size === 0) {
@@ -1947,7 +1974,41 @@ class ELISAPlateAnalyzer {
         // Get selected conditions in sorted order
         const selectedConditions = this.currentSortedConditions.filter(c => this.selectedConditions.has(c));
 
-        // Generate the chart using existing logic but with selected conditions only
+        // Collect days that exist in ALL selected conditions (Intersection)
+        let commonDaysSet = null;
+
+        selectedConditions.forEach(condition => {
+            const conditionData = this.currentGroupedData[condition];
+            const daysInThisCondition = new Set();
+
+            if (conditionData) {
+                Object.keys(conditionData).forEach(day => {
+                    if (conditionData[day]?.values?.length > 0) {
+                        daysInThisCondition.add(parseInt(day));
+                    }
+                });
+            }
+
+            if (commonDaysSet === null) {
+                // First condition initializes the set
+                commonDaysSet = daysInThisCondition;
+            } else {
+                // Intersect with existing set
+                const intersection = new Set();
+                for (const day of commonDaysSet) {
+                    if (daysInThisCondition.has(day)) {
+                        intersection.add(day);
+                    }
+                }
+                commonDaysSet = intersection;
+            }
+        });
+
+        const sortedDays = commonDaysSet ? Array.from(commonDaysSet).sort((a, b) => a - b) : [];
+
+        // Statistical analysis removed as per request
+
+        // Generate the chart wrapper
         const wrapperDiv = document.createElement('div');
         wrapperDiv.id = 'selected-conditions-chart-wrapper';
         wrapperDiv.style.marginTop = '40px';
@@ -1970,20 +2031,294 @@ class ELISAPlateAnalyzer {
         titleDiv.textContent = `選択条件の統合グラフ (${selectedConditions.length}条件)`;
         headerDiv.appendChild(titleDiv);
 
+        // Y-axis max setting control
+        const yAxisControlDiv = document.createElement('div');
+        yAxisControlDiv.style.display = 'flex';
+        yAxisControlDiv.style.alignItems = 'center';
+        yAxisControlDiv.style.gap = '15px';
+
+        const yAxisSettingDiv = document.createElement('div');
+        yAxisSettingDiv.style.display = 'flex';
+        yAxisSettingDiv.style.alignItems = 'center';
+        yAxisSettingDiv.style.gap = '5px';
+        yAxisSettingDiv.style.fontSize = '13px';
+        yAxisSettingDiv.style.color = '#555';
+
+        const yAxisLabel = document.createElement('label');
+        yAxisLabel.textContent = 'Y軸最大値:';
+        yAxisLabel.htmlFor = 'selectedChartYMax';
+        yAxisLabel.style.fontWeight = 'bold';
+        yAxisSettingDiv.appendChild(yAxisLabel);
+
+        const yAxisInput = document.createElement('input');
+        yAxisInput.type = 'number';
+        yAxisInput.id = 'selectedChartYMax';
+        yAxisInput.placeholder = '自動';
+        yAxisInput.style.width = '70px';
+        yAxisInput.style.padding = '4px 8px';
+        yAxisInput.style.border = '1px solid #ccc';
+        yAxisInput.style.borderRadius = '4px';
+        yAxisInput.style.fontSize = '13px';
+        yAxisInput.min = '0';
+        yAxisInput.step = '0.1';
+        // Restore saved value if exists
+        if (this.selectedChartYMaxValue !== undefined && this.selectedChartYMaxValue !== null) {
+            yAxisInput.value = this.selectedChartYMaxValue;
+        }
+        yAxisSettingDiv.appendChild(yAxisInput);
+
+        const yAxisApplyBtn = document.createElement('button');
+        yAxisApplyBtn.textContent = '適用';
+        yAxisApplyBtn.style.padding = '4px 10px';
+        yAxisApplyBtn.style.backgroundColor = '#4caf50';
+        yAxisApplyBtn.style.color = 'white';
+        yAxisApplyBtn.style.border = 'none';
+        yAxisApplyBtn.style.borderRadius = '4px';
+        yAxisApplyBtn.style.cursor = 'pointer';
+        yAxisApplyBtn.style.fontSize = '12px';
+        yAxisApplyBtn.onclick = () => {
+            const val = parseFloat(yAxisInput.value);
+            if (!isNaN(val) && val > 0) {
+                this.selectedChartYMaxValue = val;
+            } else {
+                this.selectedChartYMaxValue = null;
+            }
+            this.generateSelectedConditionsChart();
+        };
+        yAxisSettingDiv.appendChild(yAxisApplyBtn);
+
+        yAxisControlDiv.appendChild(yAxisSettingDiv);
+
         const exportDropdown = this.createChartExportDropdown('chart-selected-conditions', 'Selected Conditions');
-        headerDiv.appendChild(exportDropdown);
+        yAxisControlDiv.appendChild(exportDropdown);
+
+        headerDiv.appendChild(yAxisControlDiv);
 
         wrapperDiv.appendChild(headerDiv);
 
+        // Calculate and display the ratio of last 2 days averages (if exactly 2 conditions selected)
+        if (selectedConditions.length === 2) {
+            const lastTwoAverages = [];
+
+            selectedConditions.forEach(condition => {
+                const conditionData = this.currentGroupedData[condition];
+                if (conditionData) {
+                    // Get sorted days with actual data for this condition
+                    const daysWithData = Object.keys(conditionData)
+                        .map(d => parseInt(d))
+                        .filter(d => conditionData[d] && conditionData[d].values && conditionData[d].values.length > 0)
+                        .sort((a, b) => a - b);
+
+                    // Get last 2 days
+                    const lastTwoDays = daysWithData.slice(-2);
+                    const lastTwoMeans = lastTwoDays.map(d => conditionData[d].mean).filter(v => v !== null && !isNaN(v));
+                    const avg = lastTwoMeans.length > 0
+                        ? lastTwoMeans.reduce((a, b) => a + b, 0) / lastTwoMeans.length
+                        : null;
+
+                    lastTwoAverages.push({
+                        condition: condition,
+                        days: lastTwoDays,
+                        average: avg
+                    });
+                }
+            });
+
+            // Calculate ratio if both have valid averages
+            if (lastTwoAverages.length === 2 &&
+                lastTwoAverages[0].average !== null &&
+                lastTwoAverages[1].average !== null &&
+                lastTwoAverages[0].average > 0 &&
+                lastTwoAverages[1].average > 0) {
+
+                // Determine which is higher and which is lower
+                // Round averages to 3 decimal places to match displayed values
+                const roundedAvg0 = Math.round(lastTwoAverages[0].average * 1000) / 1000;
+                const roundedAvg1 = Math.round(lastTwoAverages[1].average * 1000) / 1000;
+                lastTwoAverages[0].displayAverage = roundedAvg0;
+                lastTwoAverages[1].displayAverage = roundedAvg1;
+
+                const [lower, higher] = roundedAvg0 <= roundedAvg1
+                    ? [lastTwoAverages[0], lastTwoAverages[1]]
+                    : [lastTwoAverages[1], lastTwoAverages[0]];
+
+                // Use rounded values for ratio calculation to match displayed values
+                const ratio = higher.displayAverage / lower.displayAverage;
+
+                // Calculate Hedges' g using late_mean for each replicate
+                // late_mean_i = (Day_last-1_i + Day_last_i) / 2 for each replicate
+                const condition0Data = this.currentGroupedData[selectedConditions[0]];
+                const condition1Data = this.currentGroupedData[selectedConditions[1]];
+
+                // Get the last 2 days for each condition
+                const days0 = lastTwoAverages[0].days;
+                const days1 = lastTwoAverages[1].days;
+
+                // Helper function to calculate late_mean for each replicate
+                const calculateLateMeans = (conditionData, days) => {
+                    if (days.length < 2) return [];
+
+                    const day1 = days[0]; // e.g., Day 10
+                    const day2 = days[1]; // e.g., Day 12
+
+                    const day1Data = conditionData[day1];
+                    const day2Data = conditionData[day2];
+
+                    if (!day1Data || !day2Data || !day1Data.values || !day2Data.values) {
+                        return [];
+                    }
+
+                    // Match replicates by wellId pattern (e.g., #1, #2, #3)
+                    // Group values by replicate number
+                    const replicateMap1 = new Map();
+                    const replicateMap2 = new Map();
+
+                    day1Data.values.forEach(v => {
+                        // Extract replicate number from wellId (e.g., "A1" -> use plateIdx and position)
+                        // Or use the order as replicate index
+                        const key = v.wellId || v.plateIdx + '-' + day1Data.values.indexOf(v);
+                        replicateMap1.set(replicateMap1.size, v.value);
+                    });
+
+                    day2Data.values.forEach(v => {
+                        replicateMap2.set(replicateMap2.size, v.value);
+                    });
+
+                    // Calculate late_mean for each replicate
+                    const lateMeans = [];
+                    const numReplicates = Math.min(replicateMap1.size, replicateMap2.size);
+
+                    for (let i = 0; i < numReplicates; i++) {
+                        const val1 = replicateMap1.get(i);
+                        const val2 = replicateMap2.get(i);
+                        if (val1 !== undefined && val2 !== undefined) {
+                            lateMeans.push((val1 + val2) / 2);
+                        }
+                    }
+
+                    return lateMeans;
+                };
+
+                const lateMeans0 = calculateLateMeans(condition0Data, days0);
+                const lateMeans1 = calculateLateMeans(condition1Data, days1);
+
+                let hedgesG = null;
+                let hedgesGInterpretation = '';
+                let nReplicates0 = lateMeans0.length;
+                let nReplicates1 = lateMeans1.length;
+
+                if (lateMeans0.length >= 2 && lateMeans1.length >= 2) {
+                    // Calculate means of late_means
+                    const mean0 = lateMeans0.reduce((a, b) => a + b, 0) / lateMeans0.length;
+                    const mean1 = lateMeans1.reduce((a, b) => a + b, 0) / lateMeans1.length;
+
+                    // Calculate variances
+                    const var0 = lateMeans0.reduce((sum, v) => sum + Math.pow(v - mean0, 2), 0) / (lateMeans0.length - 1);
+                    const var1 = lateMeans1.reduce((sum, v) => sum + Math.pow(v - mean1, 2), 0) / (lateMeans1.length - 1);
+
+                    // Calculate pooled standard deviation
+                    const n0 = lateMeans0.length;
+                    const n1 = lateMeans1.length;
+                    const pooledSD = Math.sqrt(((n0 - 1) * var0 + (n1 - 1) * var1) / (n0 + n1 - 2));
+
+                    if (pooledSD > 0) {
+                        // Calculate Cohen's d first
+                        const cohensD = (mean1 - mean0) / pooledSD;
+
+                        // Apply Hedges' correction factor for small samples
+                        const correctionFactor = 1 - (3 / (4 * (n0 + n1) - 9));
+                        hedgesG = cohensD * correctionFactor;
+
+                        // Interpretation of effect size (absolute value)
+                        const absG = Math.abs(hedgesG);
+                        if (absG < 0.2) {
+                            hedgesGInterpretation = '効果なし〜小';
+                        } else if (absG < 0.5) {
+                            hedgesGInterpretation = '小〜中程度';
+                        } else if (absG < 0.8) {
+                            hedgesGInterpretation = '中〜大';
+                        } else {
+                            hedgesGInterpretation = '大';
+                        }
+                    }
+                }
+
+                const ratioDisplay = document.createElement('div');
+                ratioDisplay.className = 'ratio-display';
+                ratioDisplay.style.cssText = 'background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; color: #e65100; border: 1px solid #ffb74d; display: flex; flex-direction: column; gap: 12px;';
+
+                const higherDaysLabel = higher.days.map(d => `Day ${d}`).join(', ');
+                const lowerDaysLabel = lower.days.map(d => `Day ${d}`).join(', ');
+
+                // Build Hedges' g display section
+                const hedgesGSection = hedgesG !== null ? `
+                    <div style="border-top: 1px solid #ffb74d; padding-top: 10px; margin-top: 4px;">
+                        <div style="font-weight: bold; font-size: 16px; color: #bf360c; margin-bottom: 8px;">Hedges' g (効果量)</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+                            <div style="color: #555;">
+                                <span style="font-weight: bold;">${this.formatConditionNameForDisplay(selectedConditions[1])}</span> vs <span style="font-weight: bold;">${this.formatConditionNameForDisplay(selectedConditions[0])}</span>
+                            </div>
+                            <div style="background: #6a1b9a; color: white; padding: 4px 12px; border-radius: 4px; font-size: 18px; font-weight: bold;">
+                                g = ${hedgesG.toFixed(3)}
+                            </div>
+                            <div style="color: #555; font-size: 13px;">
+                                (${hedgesGInterpretation})
+                            </div>
+                        </div>
+                        <div style="color: #777; font-size: 11px; margin-top: 6px;">
+                            late_mean方式: 各replicate毎に(Day${days0[0]}+Day${days0[1]})/2 を計算 | N: ${this.formatConditionNameForDisplay(selectedConditions[0])}=${nReplicates0}, ${this.formatConditionNameForDisplay(selectedConditions[1])}=${nReplicates1}
+                        </div>
+                    </div>
+                ` : '';
+
+                ratioDisplay.innerHTML = `
+                    <div style="font-weight: bold; font-size: 16px; color: #bf360c;">後半2日分平均値の比率</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+                        <div style="color: #555;">
+                            <span style="font-weight: bold;">${this.formatConditionNameForDisplay(higher.condition)}</span> (${higherDaysLabel}): <span style="font-weight: bold;">${higher.displayAverage.toFixed(3)}</span>
+                        </div>
+                        <div style="color: #999;">÷</div>
+                        <div style="color: #555;">
+                            <span style="font-weight: bold;">${this.formatConditionNameForDisplay(lower.condition)}</span> (${lowerDaysLabel}): <span style="font-weight: bold;">${lower.displayAverage.toFixed(3)}</span>
+                        </div>
+                        <div style="color: #999;">=</div>
+                        <div style="background: #e65100; color: white; padding: 4px 12px; border-radius: 4px; font-size: 18px; font-weight: bold;">
+                            ${ratio.toFixed(3)} 倍
+                        </div>
+                    </div>
+                    ${hedgesGSection}
+                `;
+                wrapperDiv.appendChild(ratioDisplay);
+            }
+        }
+
+        // Chart container (top - full width)
+        // Calculate minimum width based on number of conditions and days (only for 3+ conditions)
         const canvasContainer = document.createElement('div');
-        canvasContainer.style.height = '400px';
+        canvasContainer.style.width = '100%';
+        canvasContainer.style.height = '450px';
         canvasContainer.style.backgroundColor = '#ffffff';
         canvasContainer.style.borderRadius = '4px';
         canvasContainer.style.padding = '10px';
+        canvasContainer.style.marginBottom = '20px';
+        canvasContainer.style.boxSizing = 'border-box';
+
+        // Only apply wider chart for 3+ conditions
+        if (selectedConditions.length >= 3) {
+            const numBars = selectedConditions.length * sortedDays.length;
+            const minBarWidth = 40; // Minimum pixels per bar
+            const minChartWidth = Math.max(600, numBars * minBarWidth + 150); // 150 for Y-axis label and padding
+            canvasContainer.style.minWidth = `${minChartWidth}px`;
+            canvasContainer.style.overflowX = 'auto';
+        }
         const canvas = document.createElement('canvas');
         canvas.id = 'chart-selected-conditions';
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
         canvasContainer.appendChild(canvas);
         wrapperDiv.appendChild(canvasContainer);
+
+
 
         // Insert after the controls div
         const controlsDiv = container.querySelector('.chart-selection-controls');
@@ -1993,94 +2328,112 @@ class ELISAPlateAnalyzer {
             container.insertBefore(wrapperDiv, container.firstChild);
         }
 
-        // Build chart data
-        const flatLabels = [];
-        const flatValues = [];
-        const flatErrors = [];
-        const conditionGroupInfo = [];
+        // Build chart data - GROUPED BY DAY (conditions side by side within each day)
+        // Create one dataset per condition
+        const datasets = [];
+        const dayLabels = sortedDays.map(d => `D${d}`);
 
-        selectedConditions.forEach((condition) => {
+        // Color palette for conditions (grayscale to reddish like the reference image)
+        const colorPalette = [
+            { bg: 'rgba(80, 80, 80, 0.7)', border: '#333333' },      // Dark gray
+            { bg: 'rgba(120, 120, 120, 0.7)', border: '#666666' },   // Medium gray
+            { bg: 'rgba(160, 160, 160, 0.7)', border: '#999999' },   // Light gray
+            { bg: 'rgba(255, 180, 180, 0.7)', border: '#cc6666' },   // Light pink
+            { bg: 'rgba(255, 120, 120, 0.7)', border: '#cc3333' },   // Medium pink
+            { bg: 'rgba(180, 60, 60, 0.7)', border: '#991111' },     // Dark red
+        ];
+
+        // Track bar positions for significance bracket drawing
+        const barDataByDay = {}; // {day: [{condition, datasetIndex, dayIndex, value, error}, ...]}
+
+        selectedConditions.forEach((condition, condIdx) => {
             const conditionData = this.currentGroupedData[condition];
-            const conditionDays = Object.keys(conditionData)
-                .map(d => parseInt(d))
-                .filter(d => conditionData[d] && conditionData[d].values && conditionData[d].values.length > 0)
-                .sort((a, b) => a - b);
+            const values = [];
+            const errors = [];
 
-            conditionGroupInfo.push({
-                condition: condition,
-                startIndex: flatLabels.length,
-                endIndex: flatLabels.length + conditionDays.length - 1
-            });
+            sortedDays.forEach((day, dayIndex) => {
+                const dayData = conditionData?.[day];
+                if (dayData && dayData.values && dayData.values.length > 0) {
+                    values.push(dayData.mean);
+                    errors.push(dayData.sd);
 
-            conditionDays.forEach(day => {
-                flatLabels.push(day.toString());
-                flatValues.push(conditionData[day].mean);
-                flatErrors.push(conditionData[day].sd);
-            });
-        });
-
-        // Calculate max Y
-        let maxY = 0;
-        flatValues.forEach((v, i) => {
-            if (v !== null) {
-                const err = flatErrors[i] || 0;
-                if ((v + err) > maxY) maxY = v + err;
-            }
-        });
-        const yAxisMax = maxY > 0 ? maxY * 1.25 : 1;
-
-        // Generate colors
-        const barColors = flatLabels.map((_, idx) => {
-            let condIdx = 0;
-            for (let i = 0; i < conditionGroupInfo.length; i++) {
-                if (idx >= conditionGroupInfo[i].startIndex && idx <= conditionGroupInfo[i].endIndex) {
-                    condIdx = i;
-                    break;
+                    // Track for bracket drawing
+                    if (!barDataByDay[day]) {
+                        barDataByDay[day] = [];
+                    }
+                    barDataByDay[day].push({
+                        condition,
+                        datasetIndex: condIdx,
+                        dayIndex,
+                        value: dayData.mean,
+                        error: dayData.sd
+                    });
+                } else {
+                    values.push(null);
+                    errors.push(0);
                 }
-            }
-            const grayValue = 70 + (condIdx % 3) * 30;
-            return `rgba(${grayValue}, ${grayValue}, ${grayValue}, 0.7)`;
+            });
+
+            const colorIdx = condIdx % colorPalette.length;
+            datasets.push({
+                label: this.formatConditionNameForDisplay(condition),
+                data: values,
+                backgroundColor: colorPalette[colorIdx].bg,
+                borderColor: colorPalette[colorIdx].border,
+                borderWidth: 1,
+                barPercentage: 0.85,
+                categoryPercentage: 0.8,
+                errorBars: errors  // Store for error bar drawing
+            });
         });
+
+        // Calculate max Y - add extra space for significance brackets
+        let maxY = 0;
+        datasets.forEach(ds => {
+            ds.data.forEach((v, i) => {
+                if (v !== null) {
+                    const err = ds.errorBars[i] || 0;
+                    if ((v + err) > maxY) maxY = v + err;
+                }
+            });
+        });
+
+        // Use user-specified Y-axis max if set, otherwise auto-calculate
+        const userYMax = this.selectedChartYMaxValue;
+        const yAxisMax = (userYMax && userYMax > 0) ? userYMax : (maxY > 0 ? maxY * 1.2 : 1);
 
         // Destroy existing chart if any
         if (this.sampleCharts['chart-selected-conditions']) {
             this.sampleCharts['chart-selected-conditions'].destroy();
         }
 
-        // Create chart
+        // Create chart with grouped bar layout
         this.sampleCharts['chart-selected-conditions'] = new Chart(canvas.getContext('2d'), {
             type: 'bar',
             data: {
-                labels: flatLabels,
-                datasets: [{
-                    label: 'Albumin secretion',
-                    data: flatValues,
-                    backgroundColor: barColors,
-                    borderColor: '#333333',
-                    borderWidth: 1,
-                    barPercentage: 0.6,
-                    categoryPercentage: 0.7
-                }]
+                labels: dayLabels,
+                datasets: datasets
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                layout: { padding: { bottom: 35 } },
+                layout: { padding: { bottom: 20, top: 30 } },
                 plugins: {
-                    legend: { display: false },
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: '#000000',
+                            font: { family: 'Arial, Helvetica, sans-serif', size: 11, weight: 'bold' },
+                            usePointStyle: true,
+                            pointStyle: 'rect'
+                        }
+                    },
                     tooltip: {
                         callbacks: {
-                            title: (context) => {
-                                const idx = context[0].dataIndex;
-                                let condName = '';
-                                conditionGroupInfo.forEach(g => {
-                                    if (idx >= g.startIndex && idx <= g.endIndex) condName = g.condition;
-                                });
-                                return condName;
-                            },
                             label: (context) => {
                                 const value = context.parsed.y;
-                                return `Day ${context.label}: ${value !== null ? value.toFixed(3) : 'N/A'} µg/1M cells`;
+                                return `${context.dataset.label}: ${value !== null ? value.toFixed(3) : 'N/A'} µg/1M cells/day`;
                             }
                         }
                     }
@@ -2090,7 +2443,7 @@ class ELISAPlateAnalyzer {
                         grid: { display: true, drawOnChartArea: false, drawTicks: true, tickLength: 6, tickColor: '#000000' },
                         border: { color: '#000000', width: 2 },
                         ticks: { color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 14, weight: 'bold' }, maxRotation: 0, minRotation: 0 },
-                        title: { display: true, text: 'Day', color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 14, weight: 'bold' } }
+                        title: { display: false }  // Day labels are already clear from D4, D6, etc.
                     },
                     y: {
                         beginAtZero: true,
@@ -2098,85 +2451,257 @@ class ELISAPlateAnalyzer {
                         grid: { display: true, drawOnChartArea: false, drawTicks: true, tickLength: 6, tickColor: '#000000' },
                         border: { color: '#000000', width: 2 },
                         ticks: { color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 12, weight: 'bold' }, padding: 8 },
-                        title: { display: true, text: 'Albumin [µg / 1M cells]', color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 14, weight: 'bold' }, padding: { bottom: 10 } }
+                        title: { display: true, text: 'Albumin [µg/1M cells/day]', color: '#000000', font: { family: 'Arial, Helvetica, sans-serif', size: 14, weight: 'bold' }, padding: { bottom: 10 } }
                     }
                 }
             },
             plugins: [{
+                // Custom plugin for error bars
                 id: 'selectedErrorBars',
                 afterDatasetsDraw: (chart) => {
                     const { ctx, scales: { y } } = chart;
-                    const meta = chart.getDatasetMeta(0);
-                    if (!meta || meta.data.length === 0) return;
 
-                    meta.data.forEach((bar, index) => {
-                        const value = flatValues[index];
-                        const error = flatErrors[index];
-                        if (value === null || error === 0 || error === undefined) return;
+                    chart.data.datasets.forEach((dataset, datasetIndex) => {
+                        const meta = chart.getDatasetMeta(datasetIndex);
+                        if (!meta || meta.data.length === 0) return;
 
-                        const barX = bar.x;
-                        const yTop = y.getPixelForValue(value + error);
-                        const yBottom = y.getPixelForValue(Math.max(0, value - error));
+                        meta.data.forEach((bar, index) => {
+                            const value = dataset.data[index];
+                            const error = dataset.errorBars?.[index];
+                            if (value === null || error === 0 || error === undefined) return;
 
-                        ctx.save();
-                        ctx.beginPath();
-                        ctx.strokeStyle = '#000000';
-                        ctx.lineWidth = 1.5;
-                        ctx.moveTo(barX, yTop);
-                        ctx.lineTo(barX, yBottom);
-                        const capWidth = 4;
-                        ctx.moveTo(barX - capWidth, yTop);
-                        ctx.lineTo(barX + capWidth, yTop);
-                        ctx.moveTo(barX - capWidth, yBottom);
-                        ctx.lineTo(barX + capWidth, yBottom);
-                        ctx.stroke();
-                        ctx.restore();
-                    });
-                }
-            }, {
-                id: 'selectedConditionLabels',
-                afterDraw: (chart) => {
-                    const { ctx, chartArea } = chart;
-                    ctx.save();
-                    ctx.font = 'bold 11px Arial, Helvetica, sans-serif';
-                    ctx.fillStyle = '#000000';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'top';
+                            const barX = bar.x;
+                            const yTop = y.getPixelForValue(value + error);
+                            const yBottom = y.getPixelForValue(Math.max(0, value - error));
 
-                    conditionGroupInfo.forEach((group, condIdx) => {
-                        const meta = chart.getDatasetMeta(0);
-                        if (meta.data.length === 0) return;
-
-                        const startX = meta.data[group.startIndex]?.x || 0;
-                        const endX = meta.data[group.endIndex]?.x || 0;
-                        const centerX = (startX + endX) / 2;
-                        const yPos = chartArea.bottom + 55;
-                        ctx.fillText(group.condition, centerX, yPos);
-
-                        if (condIdx < conditionGroupInfo.length - 1) {
-                            const nextGroup = conditionGroupInfo[condIdx + 1];
-                            const nextStartX = meta.data[nextGroup.startIndex]?.x || 0;
-                            const separatorX = endX + (nextStartX - endX) / 2;
+                            ctx.save();
                             ctx.beginPath();
-                            ctx.strokeStyle = '#cccccc';
-                            ctx.lineWidth = 1;
-                            ctx.setLineDash([3, 3]);
-                            ctx.moveTo(separatorX, chartArea.top);
-                            ctx.lineTo(separatorX, chartArea.bottom);
+                            ctx.strokeStyle = '#000000';
+                            ctx.lineWidth = 1.5;
+                            ctx.moveTo(barX, yTop);
+                            ctx.lineTo(barX, yBottom);
+                            const capWidth = 4;
+                            ctx.moveTo(barX - capWidth, yTop);
+                            ctx.lineTo(barX + capWidth, yTop);
+                            ctx.moveTo(barX - capWidth, yBottom);
+                            ctx.lineTo(barX + capWidth, yBottom);
                             ctx.stroke();
-                            ctx.setLineDash([]);
-                        }
+                            ctx.restore();
+                        });
                     });
-                    ctx.restore();
                 }
             }]
         });
 
         // Store data for export
-        this.sampleCharts['chart-selected-conditions'].errorData = flatErrors;
-        this.sampleCharts['chart-selected-conditions'].barValues = flatValues;
+        this.sampleCharts['chart-selected-conditions'].errorData = datasets.map(ds => ds.errorBars);
+        this.sampleCharts['chart-selected-conditions'].barValues = datasets.map(ds => ds.data);
         this.sampleCharts['chart-selected-conditions'].conditionLabels = selectedConditions;
         this.sampleCharts['chart-selected-conditions'].isCombinedChart = true;
+
+
+        // === GraphPad Prism用データセクション ===
+        const prismPanel = document.createElement('div');
+        prismPanel.id = 'prism-data-panel';
+        prismPanel.style.marginTop = '20px';
+        prismPanel.style.backgroundColor = '#ffffff';
+        prismPanel.style.borderRadius = '4px';
+        prismPanel.style.padding = '15px';
+        prismPanel.style.border = '1px solid #ccc';
+
+        const prismTitleDiv = document.createElement('div');
+        prismTitleDiv.style.fontSize = '14px';
+        prismTitleDiv.style.fontWeight = 'bold';
+        prismTitleDiv.style.color = '#333';
+        prismTitleDiv.style.marginBottom = '10px';
+        prismTitleDiv.style.paddingBottom = '8px';
+        prismTitleDiv.style.borderBottom = '2px solid #2196f3';
+        prismTitleDiv.textContent = '📋 GraphPad Prism用データ（タブ区切り）';
+        prismPanel.appendChild(prismTitleDiv);
+
+        // 説明テキスト
+        const prismDesc = document.createElement('div');
+        prismDesc.style.fontSize = '12px';
+        prismDesc.style.color = '#666';
+        prismDesc.style.marginBottom = '10px';
+        prismDesc.innerHTML = '以下のテキストをコピーしてGraphPad Prismに直接ペーストできます。<br><strong>形式1:</strong> 個別データ点（Grouped形式） / <strong>形式2:</strong> 平均±SD';
+        prismPanel.appendChild(prismDesc);
+
+        // --- 形式1: 個別データ点 ---
+        const format1Title = document.createElement('div');
+        format1Title.style.fontWeight = 'bold';
+        format1Title.style.fontSize = '12px';
+        format1Title.style.marginBottom = '5px';
+        format1Title.style.color = '#1976d2';
+        format1Title.textContent = '▼ 個別データ点 (Grouped format)';
+        prismPanel.appendChild(format1Title);
+
+        // Build individual data table for GraphPad Prism "Grouped" format
+        // Row = Day, Columns = Condition x Replicates
+        // Format:
+        //       Group A (condition1)    Group B (condition2)
+        //       A:1   A:2   A:3         B:1   B:2   B:3
+        // 4     val   val   val         val   val   val
+        // 6     val   val   val         val   val   val
+
+        // Find max replicates per condition across all days
+        let maxReps = 0;
+        selectedConditions.forEach(cond => {
+            sortedDays.forEach(day => {
+                const dayData = this.currentGroupedData[cond]?.[day];
+                if (dayData?.values) {
+                    maxReps = Math.max(maxReps, dayData.values.length);
+                }
+            });
+        });
+
+        // Build header row 1: Group names (condition names)
+        let individualData = '';
+        const groupLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        selectedConditions.forEach((cond, condIdx) => {
+            const letter = groupLetters[condIdx] || condIdx;
+            // Add condition name spanning across replicate columns
+            individualData += '\t' + cond;
+            for (let r = 1; r < maxReps; r++) {
+                individualData += '\t';
+            }
+        });
+        individualData += '\n';
+
+        // Build header row 2: Sub-column headers (A:1, A:2, A:3, B:1, B:2, ...)
+        selectedConditions.forEach((cond, condIdx) => {
+            const letter = groupLetters[condIdx] || condIdx;
+            for (let r = 0; r < maxReps; r++) {
+                individualData += '\t' + letter + ':' + (r + 1);
+            }
+        });
+        individualData += '\n';
+
+        // Build data rows: each row is a day
+        console.log('=== Prism Data Export Debug ===');
+        console.log(`Selected conditions: ${selectedConditions.join(', ')}`);
+        console.log(`Max replicates: ${maxReps}`);
+
+        sortedDays.forEach((day, dayIdx) => {
+            let row = `${day}`;  // Row label = day number
+            console.log(`Day ${day}:`);
+
+            selectedConditions.forEach(cond => {
+                const dayData = this.currentGroupedData[cond]?.[day];
+                const values = dayData?.values || [];
+                console.log(`  ${cond}: ${values.length} values`);
+
+                for (let r = 0; r < maxReps; r++) {
+                    const val = values[r];
+                    let numVal = null;
+                    if (val !== undefined) {
+                        numVal = typeof val === 'object' ? val.value : val;
+                        console.log(`    [${r}] = ${numVal?.toFixed(4)} (source: ${typeof val === 'object' ? `P${val.plateIdx}_${val.wellId}` : 'raw'})`);
+                    }
+                    row += '\t' + (numVal !== null && numVal !== undefined ? numVal.toFixed(4) : '');
+                }
+            });
+            individualData += row + '\n';
+        });
+        console.log('=== End Prism Data Export Debug ===');
+
+        const textarea1 = document.createElement('textarea');
+        textarea1.value = individualData;
+        textarea1.style.width = '100%';
+        textarea1.style.height = '150px';
+        textarea1.style.fontFamily = 'monospace';
+        textarea1.style.fontSize = '11px';
+        textarea1.style.marginBottom = '10px';
+        textarea1.style.padding = '8px';
+        textarea1.style.border = '1px solid #ddd';
+        textarea1.style.borderRadius = '4px';
+        textarea1.style.resize = 'vertical';
+        textarea1.readOnly = true;
+        textarea1.onclick = function () { this.select(); };
+        prismPanel.appendChild(textarea1);
+
+        // Copy button for format 1
+        const copyBtn1 = document.createElement('button');
+        copyBtn1.textContent = '📋 個別データをコピー';
+        copyBtn1.style.marginBottom = '15px';
+        copyBtn1.style.padding = '6px 12px';
+        copyBtn1.style.fontSize = '12px';
+        copyBtn1.style.cursor = 'pointer';
+        copyBtn1.style.backgroundColor = '#2196f3';
+        copyBtn1.style.color = 'white';
+        copyBtn1.style.border = 'none';
+        copyBtn1.style.borderRadius = '4px';
+        copyBtn1.onclick = () => {
+            navigator.clipboard.writeText(individualData).then(() => {
+                copyBtn1.textContent = '✅ コピーしました！';
+                setTimeout(() => { copyBtn1.textContent = '📋 個別データをコピー'; }, 2000);
+            });
+        };
+        prismPanel.appendChild(copyBtn1);
+
+        // --- 形式2: 平均±SD ---
+        const format2Title = document.createElement('div');
+        format2Title.style.fontWeight = 'bold';
+        format2Title.style.fontSize = '12px';
+        format2Title.style.marginBottom = '5px';
+        format2Title.style.marginTop = '10px';
+        format2Title.style.color = '#1976d2';
+        format2Title.textContent = '▼ 平均±SD (Mean ± SD format)';
+        prismPanel.appendChild(format2Title);
+
+        // Build mean±SD table
+        let meanSdData = 'Day';
+        selectedConditions.forEach(cond => {
+            meanSdData += '\t' + cond + ' (Mean)\t' + cond + ' (SD)';
+        });
+        meanSdData += '\n';
+
+        sortedDays.forEach(day => {
+            let row = `D${day}`;
+            selectedConditions.forEach(cond => {
+                const dayData = this.currentGroupedData[cond]?.[day];
+                const mean = dayData?.mean;
+                const sd = dayData?.sd;
+                row += '\t' + (mean !== null && mean !== undefined ? mean.toFixed(4) : '');
+                row += '\t' + (sd !== null && sd !== undefined ? sd.toFixed(4) : '');
+            });
+            meanSdData += row + '\n';
+        });
+
+        const textarea2 = document.createElement('textarea');
+        textarea2.value = meanSdData;
+        textarea2.style.width = '100%';
+        textarea2.style.height = '120px';
+        textarea2.style.fontFamily = 'monospace';
+        textarea2.style.fontSize = '11px';
+        textarea2.style.marginBottom = '10px';
+        textarea2.style.padding = '8px';
+        textarea2.style.border = '1px solid #ddd';
+        textarea2.style.borderRadius = '4px';
+        textarea2.style.resize = 'vertical';
+        textarea2.readOnly = true;
+        textarea2.onclick = function () { this.select(); };
+        prismPanel.appendChild(textarea2);
+
+        // Copy button for format 2
+        const copyBtn2 = document.createElement('button');
+        copyBtn2.textContent = '📋 平均±SDをコピー';
+        copyBtn2.style.padding = '6px 12px';
+        copyBtn2.style.fontSize = '12px';
+        copyBtn2.style.cursor = 'pointer';
+        copyBtn2.style.backgroundColor = '#2196f3';
+        copyBtn2.style.color = 'white';
+        copyBtn2.style.border = 'none';
+        copyBtn2.style.borderRadius = '4px';
+        copyBtn2.onclick = () => {
+            navigator.clipboard.writeText(meanSdData).then(() => {
+                copyBtn2.textContent = '✅ コピーしました！';
+                setTimeout(() => { copyBtn2.textContent = '📋 平均±SDをコピー'; }, 2000);
+            });
+        };
+        prismPanel.appendChild(copyBtn2);
+
+        wrapperDiv.appendChild(prismPanel);
 
         // Scroll to the new chart
         wrapperDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
